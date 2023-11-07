@@ -36,6 +36,7 @@ class DownloadBase:
         self.raw_stream_url = None
         self.filename_prefix = config.get('filename_prefix')
         self.use_live_cover = config.get('use_live_cover', False)
+        self.first = True
         self.opt_args = opt_args
         # 是否是下载模式 跳过下播检测
         self.is_download = False
@@ -50,12 +51,6 @@ class DownloadBase:
         self.default_output_args = [
             '-bsf:a', 'aac_adtstoasc',
         ]
-        if config.get('segment_time'):
-            self.default_output_args += \
-                ['-to', f"{config.get('segment_time', '00:50:00')}"]
-        else:
-            self.default_output_args += \
-                ['-fs', f"{config.get('file_size', '2621440000')}"]
 
     def check_stream(self, is_check=False):
         # is_check 是否是检测可以避免在检测是否可以录制的时候忽略一些耗时的操作
@@ -84,6 +79,11 @@ class DownloadBase:
         filename = self.get_filename()
         fmtname = time.strftime(filename.encode("unicode-escape").decode()).encode().decode("unicode-escape")
 
+        if config.get('segment_time'):
+            self.default_output_args += ['-to', f"{config['streamers'].get(self.fname, {}).get('segment_time', config.get('segment_time', '00:50:00'))}"]
+        else:
+            self.default_output_args += ['-fs', f"{config['streamers'].get(self.fname, {}).get('file_size', config.get('file_size', '2621440000'))}"]
+
         self.danmaku_download_start(fmtname)
 
         if self.downloader == 'streamlink':
@@ -96,8 +96,8 @@ class DownloadBase:
         elif self.downloader == 'ffmpeg':
             return self.ffmpeg_download(fmtname)
 
-        stream_gears_download(self.raw_stream_url, self.fake_headers, filename, config.get('segment_time'),
-                              config.get('file_size'))
+        stream_gears_download(self.raw_stream_url, self.fake_headers, filename, config['streamers'].get(self.fname, {}).get('segment_time', config.get('segment_time')),
+                              config['streamers'].get(self.fname, {}).get('file_size', config.get('file_size')))
         return True
 
     def streamlink_download(self, filename):  # streamlink+ffmpeg混合下载模式，适用于下载hls流
@@ -173,6 +173,15 @@ class DownloadBase:
     def run(self):
         if not self.check_stream():
             return False
+        preprocessor = config['streamers'].get(self.fname, {}).get('preprocessor')
+        if self.first and preprocessor:
+            processor(preprocessor, json.dumps({
+                 "name": self.fname,
+                 "url": self.url,
+                 "title": self.room_title,
+                 "start_time": int(time.time())
+            }, ensure_ascii=False))
+        self.first = False
         file_name = self.file_name
         retval = self.download(file_name)
         self.rename(f'{file_name}.{self.suffix}')
@@ -363,3 +372,16 @@ def get_valid_filename(name):
     if s in {"", ".", ".."}:
         raise RuntimeError("Could not derive file name from '%s'" % name)
     return s
+
+def processor(processors, data):
+    for processor in processors:
+        if processor.get('run'):
+            try:
+                process_output = subprocess.check_output(
+                    processor['run'], shell=True,
+                    input=data,
+                    stderr=subprocess.STDOUT, text=True)
+                logger.info(process_output.rstrip())
+            except subprocess.CalledProcessError as e:
+                logger.exception(e.output)
+                continue

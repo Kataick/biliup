@@ -45,13 +45,6 @@ def process(name, url):
         'name': name,
         'url': url,
     }
-    preprocessor = config['streamers'].get(name, {}).get('preprocessor')
-    if preprocessor:
-        processor(preprocessor, json.dumps({
-            "name": name,
-            "url": url,
-            "start_time": int(time.time())
-        }, ensure_ascii=False))
 
     url_status = event_manager.context['url_status']
     # 下载开始
@@ -111,16 +104,3 @@ class KernelFunc:
 
         return url_status
 
-
-def processor(processors, data):
-    for processor in processors:
-        if processor.get('run'):
-            try:
-                process_output = subprocess.check_output(
-                    processor['run'], shell=True,
-                    input=data,
-                    stderr=subprocess.STDOUT, text=True)
-                logger.info(process_output.rstrip())
-            except subprocess.CalledProcessError as e:
-                logger.exception(e.output)
-                continue

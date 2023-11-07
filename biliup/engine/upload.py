@@ -126,7 +126,7 @@ class UploadBase:
                 # 下载后处理 上传前处理
                 downloaded_processor = config['streamers'].get(self.principal, {}).get('downloaded_processor')
                 if downloaded_processor:
-                    from biliup.handler import processor
+                    from biliup.downloader import processor
                     default_date = time.localtime()
                     processor(downloaded_processor, json.dumps({
                         "name": self.principal,
